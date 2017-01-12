@@ -1,0 +1,21 @@
+Package: moach
+Type: Package
+Title: Multi-Omic Assay Characterization
+Version: 0.1.0
+Author@R: as.person(c(
+    "Teo Sakel <teo@mail.ntua.gr> [aut, cre]",
+    "Asier Antoranz-Martinez <asier.antoranz@protatonce.com> [aut]"
+    ))
+Maintainer: Teo Sakel <teo@mail.ntua.gr>
+Description: A small package to automate common assay analysis pipelines. 
+    "Common" with respect to NTUA's System Bioengineering Group
+    (www.ntuabiolab.wikispaces.com) and Protavio (www.protavio.com) standards.
+    Basically a hack to save ourselves some time :) (according to our back-of-the-
+    envelope calculations).
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+Imports:
+    stringr,
+    tidyr
+RoxygenNote: 5.0.1
