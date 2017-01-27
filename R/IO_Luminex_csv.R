@@ -48,20 +48,24 @@ read_Xponent_csv <- function(path) {
     # Read and Clean Lines
     Lines <- readLines(path)
     delim <- ifelse(stringr::str_count(Lines[1], ",") > 0, ",", ";")
+    delim_regex <- paste0(delim, "(?=([^\"]*\"[^\"]*\")*[^\"]*$)")  # csv regex
     Lines <- stringr::str_replace(Lines, paste0(delim, "*$"), "") # Remove trailing delimiters
+    Lines <- stringr::str_split(Lines, delim_regex)
+    Lines <- lapply(Lines, stringr::str_replace_all, "^\"|\"$", "")
+    Lines <- vapply(Lines, paste, "", collapse = "\t")
 
     # Organize Lines into Blocks
     empty_lines <- which(Lines == "") + 1
     Lines <- .splitAt(Lines, empty_lines)
     Lines[vapply(Lines, function(x) all(x == ""), FALSE)] <- NULL  # remove empty blocks
-    header_end <- grep("^\"?Results", vapply(Lines, "[", "", 1))
+    header_end <- grep("^Results", vapply(Lines, "[", "", 1))
     header_lines <- Lines[1:(header_end - 1)]
     results_lines <- Lines[(header_end + 1):length(Lines)]
 
 
     Xcsv <- list(
-        BatchHeader = .parse_Xcsv_header(header_lines, delim),
-        AssayData = .parse_Xcsv_results(results_lines, delim)
+        BatchHeader = .parse_Xcsv_header(header_lines),
+        AssayData = .parse_Xcsv_results(results_lines)
     )
     # special case
     Xcsv$BatchHeader$CRC <- as.character(tryCatch(results_lines[[length(results_lines)]][2],
@@ -74,26 +78,26 @@ read_Xponent_csv <- function(path) {
 
 # SubMethods ----------------------------------------------------------------------------------
 
-.parse_Xcsv_header <- function(Lines, delim) {
+.parse_Xcsv_header <- function(Lines) {
     ## Comments:
         # Should we pass the Dates in the header?
 
     # Parameters
+    delim <- "\t"
     fields <- vapply(Lines, "[", "", 1)
-    delim_regex <- paste0(delim, "(?=([^\"]*\"[^\"]*\")*[^\"]*$)")  # csv regex
 
     # Parse Batch Info
     batch_info <- c(Lines[[1]], Lines[[2]])  # first two fields are Batch Info
-    batch_info <- .parse_Xcsv_BatchInfo(batch_info, delim_regex)
+    batch_info <- .parse_Xcsv_BatchInfo(batch_info)
 
     # Parse Calibration Info
     lastcal <- grep("^Most Recent Calibration and Verification Results:", fields)
     calinfo <- grep("^CALInfo:", fields)
-    CALInfo <- .parse_Xcsv_CALInfo(list(unlist(Lines[lastcal]), unlist(Lines[calinfo])), delim)
+    CALInfo <- .parse_Xcsv_CALInfo(list(unlist(Lines[lastcal]), unlist(Lines[calinfo])))
 
     # Parse Sample Field
     sample_field <- Lines[[length(Lines)]]
-    sample_field <- stringr::str_split(sample_field[grep("^\"?Samples", sample_field)], delim_regex)[[1]]
+    sample_field <- stringr::str_split(sample_field[grep("^Samples", sample_field)], "\t")[[1]]
     Samples <- as.integer(sample_field[2])
     MinEvents <- paste(sample_field[4:length(sample_field)], collapse = " ")
 
@@ -105,7 +109,7 @@ read_Xponent_csv <- function(path) {
     ))
 }
 
-.parse_Xcsv_BatchInfo <- function(Lines, delim_regex) {
+.parse_Xcsv_BatchInfo <- function(Lines) {
 
     # Parameters
     list_fields <- c("ProtocolPlate", "ProtocolMicrosphere")
@@ -119,7 +123,7 @@ read_Xponent_csv <- function(path) {
     }
 
     # Clean up
-    Lines <- stringr::str_split(Lines, delim_regex)  # split into list of vectors
+    Lines <- stringr::str_split(Lines, "\t")  # split into list of vectors
     fields <- vapply(Lines, "[", "", 1)
     fields <- stringr::str_replace_all(fields, "\\s+", "")
     Lines <- Lines[fields != ""]; fields <- fields[fields != ""]  # remove empty lines
@@ -132,12 +136,12 @@ read_Xponent_csv <- function(path) {
     return(BatchInfo)
 }
 
-.parse_Xcsv_CALInfo <- function(Lines, delim) {
+.parse_Xcsv_CALInfo <- function(Lines) {
     # I am not sure about the format. Added a lot of tryCatch to avoid trouble...
 
     LastCAL <- NA
     if (!is.null(Lines[[1]])) {
-        LastCAL <- .chr_vector_to_df(Lines[[1]][-1], sep = delim, header = FALSE, quote = "\"",
+        LastCAL <- .chr_vector_to_df(Lines[[1]][-1], sep = "\t", header = FALSE,
                                      col.names = c("Description", "Results"),
                                      colClasses = "character")
     }
@@ -148,7 +152,7 @@ read_Xponent_csv <- function(path) {
         cce <- which(CALInfo == "Classification Calibrator Extended")
         rcal <- which(CALInfo == "Reporter Calibrator")
         Classification_Calibrator_Extended <- tryCatch(
-            .chr_vector_to_df(CALInfo[(cce+1):(rcal -1)], sep = delim, header=TRUE, quote = "\""),
+            .chr_vector_to_df(CALInfo[(cce+1):(rcal -1)], sep = "\t", header=TRUE),
             error = function(e) NA
         )
 
@@ -156,7 +160,7 @@ read_Xponent_csv <- function(path) {
             rcal <- CALInfo[(rcal+1):length(CALInfo)]
             lots <- grep("^Lot", rcal)
             rcal <- .splitAt(rcal, lots)
-            rcal <- lapply(rcal, .chr_vector_to_df, sep = delim, header=TRUE, quote = "\"")
+            rcal <- lapply(rcal, .chr_vector_to_df, sep = "\t", header=TRUE)
             dplyr::bind_rows(rcal)
         }, error = function(e) NA)
 
@@ -170,7 +174,7 @@ read_Xponent_csv <- function(path) {
 
 }
 
-.parse_Xcsv_results <- function(Lines, delim) {
+.parse_Xcsv_results <- function(Lines) {
     ## Comments:
         # Break into smaller functions?
         # Export as tibble?
@@ -185,9 +189,8 @@ read_Xponent_csv <- function(path) {
     run_vars <- c("Audit Logs", "Warnings/Errors")
 
     # Prepare Data
-    delim_regex <- paste0(delim, "(?=([^\"]*\"[^\"]*\")*[^\"]*$)")  # csv regex
     fields <- vapply(Lines, "[", "", 1)
-    fields <- stringr::str_split(fields, delim_regex)
+    fields <- stringr::str_split(fields, "\t")
     fields <- vapply(fields, "[", "", 2)
     names(Lines) <- fields
 
@@ -195,7 +198,7 @@ read_Xponent_csv <- function(path) {
     exprs_var <- intersect(exprs_var, fields)
     Exprs <- lapply(exprs_var,
         function(type) {
-            df <- .chr_vector_to_df(Lines[[type]][-1], header = TRUE, sep = delim, quote="\"")
+            df <- .chr_vector_to_df(Lines[[type]][-1], header = TRUE, sep = "\t")
             df$Total.Events <- NULL
             df$Location <- stringr::str_extract(df$Location, "[A-Z]+[0-9]+")
             analytes <- setdiff(colnames(df), id_vars[-3])
@@ -215,7 +218,7 @@ read_Xponent_csv <- function(path) {
     if (length(aver_vars) > 0) {
         Average <- lapply(aver_vars,
             function(type) {
-                df <- .chr_vector_to_df(Lines[[type]][-1], header = TRUE, sep = delim, quote="\"")
+                df <- .chr_vector_to_df(Lines[[type]][-1], header = TRUE, sep = "\t")
                 analytes <- setdiff(colnames(df), id_vars[-3])
                 df <- tidyr::gather_(df, id_vars[3], type, analytes)
                 colnames(df) <- stringr::str_replace_all(colnames(df), "\\s+", "_")
@@ -234,7 +237,7 @@ read_Xponent_csv <- function(path) {
     if (length(well_vars) > 0) {
         Wells <- lapply(well_vars,
             function(type) {
-                df <- .chr_vector_to_df(Lines[[type]][-1], header = TRUE, sep = delim, quote="\"")
+                df <- .chr_vector_to_df(Lines[[type]][-1], header = TRUE, sep = "\t")
                 df$Location <- stringr::str_extract(df$Location, "[A-Z]+[0-9]+")
                 colnames(df) <- stringr::str_replace_all(colnames(df), "\\s+", "_")
                 df
@@ -250,7 +253,7 @@ read_Xponent_csv <- function(path) {
     bead_vars <- intersect(bead_vars, fields)
     Beads <- lapply(bead_vars,
         function(type) {
-            cols <- stringr::str_split(Lines[[type]][-1], delim_regex)[1:3]
+            cols <- stringr::str_split(Lines[[type]][-1], "\t")[1:3]
             col_names <- stringr::str_replace_all(vapply(cols, "[", "", 1), ":", "")
             df <- setNames(lapply(cols, function(x) x[2:max(2, length(x))]), col_names)
             if ("BeadID" %in% col_names) df[["BeadID"]] <- as.integer(df[["BeadID"]])
@@ -269,7 +272,7 @@ read_Xponent_csv <- function(path) {
     run_vars <- intersect(run_vars, fields)
     Run <- lapply(run_vars,
         function(type) {
-            df <- .chr_vector_to_df(Lines[[type]][-1], header = TRUE, sep = delim, quote="\"")
+            df <- .chr_vector_to_df(Lines[[type]][-1], header = TRUE, sep = "\t")
             if ("Location" %in% colnames(df)) df$Location <- stringr::str_extract(df$Location, "[A-Z]+[0-9]+")
             colnames(df) <- stringr::str_replace_all(colnames(df), "\\s+", "_")
             df
