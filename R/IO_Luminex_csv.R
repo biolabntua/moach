@@ -256,7 +256,7 @@ read_Xponent_csv <- function(path) {
             lines <- Lines[[type]]
             cols <- stringr::str_split(lines[2:(length(lines) - 1)], "\t")
             col_names <- stringr::str_replace_all(vapply(cols, "[", "", 1), ":", "")
-            df <- setNames(lapply(cols, function(x) x[2:max(2, length(x)-1)]), col_names)
+            df <- setNames(lapply(cols, function(x) x[2:max(2, length(x))]), col_names)
             if ("BeadID" %in% col_names) df[["BeadID"]] <- as.integer(df[["BeadID"]])
             if (type == "Per Bead Count") df[[3]] <- as.integer(df[[3]])
 #            df[[type]] <- c(df[[type]], rep(NA, length(df$BeadID) - length(df[[type]])))
